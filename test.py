@@ -1,6 +1,6 @@
 import unittest
 import parallel_queries as pqueries
-
+import sqlalchemy as sa
 
 class Tests(unittest.TestCase):
 
@@ -46,5 +46,32 @@ class Tests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             pqueries.execute_query_in_parallel(conn, stmt, parameters)
+
+    def test_execute_query_in_parallel_run_without_hint(self):
+
+
+        eng = sa.create_engine('sqlite:///:memory:')
+
+        eng.execute('CREATE TABLE t (val1 INT, val2 INT)')
+        eng.execute('INSERT INTO t VALUES (1, 1), (2, 3), (5, 4)')
+
+        stmt_1 = """
+        SELECT * FROM t
+        """
+
+        try:
+            eng.execute(stmt_1)
+        except:
+            self.fail('Code failed on stmt_1')
+
+
+        stmt_2 = """
+        SELECT * from t WHERE val1 < :param_1
+        """
+
+        try:
+            eng.execute(stmt_2, {'param_1': 4})
+        except:
+            self.fail('Code failed on stmt_2')
 
 
