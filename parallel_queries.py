@@ -1,5 +1,7 @@
 import typing
 import re
+from itertools import chain
+
 import sqlalchemy
 from joblib import Parallel, delayed
 
@@ -35,7 +37,7 @@ def get_parallel_hinted_params(parameters: typing.List[str]) -> typing.List[str]
     return [p for p in parameters if p.endswith('_PARALLEL')]
 
 
-def execute_query_in_parallel(connectable: sqlalchemy.engine.Connectable,
+def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
                               stmt: str,
                               parameters: dict,
                               n_jobs: int = 4,
@@ -51,9 +53,12 @@ def execute_query_in_parallel(connectable: sqlalchemy.engine.Connectable,
         A list containing the rows retrived.
     """
 
+    engine.dispose()  # Dispose all connections from engine first
+
     def run_query(param):
         """Closure to run the query inside delayed"""
-        return connectable.execute(sqlalchemy.text(stmt), param).fetchall()
+        with engine.connect() as conn:
+            return conn.execute(sqlalchemy.text(stmt), param).fetchall()
 
     # Check if the *parameters* containing all values required by the query
     required_parameters = get_named_params(stmt)
@@ -69,7 +74,9 @@ def execute_query_in_parallel(connectable: sqlalchemy.engine.Connectable,
 
     # If none parameter is parallel, execute the query as is.
     if len(parallel_parameters) == 0:
-        return connectable.execute(sqlalchemy.text(stmt), parameters).fetchall()
+        query = sqlalchemy.text(stmt)
+        with engine.connect() as conn:
+            return conn.execute(sqlalchemy.text(stmt), parameters).fetchall()
 
     # Get values from parallel parameters keeping only list values
     parallel_param_values = {k: parameters[k] for k in parallel_parameters if isinstance(parameters[k], list)}
@@ -85,8 +92,8 @@ def execute_query_in_parallel(connectable: sqlalchemy.engine.Connectable,
 
     with Parallel(n_jobs=n_jobs, backend='threading') as pwork:
         result = pwork(
-            delayed(run_query)(dict(parameters, **{best_param: v}))
+            delayed(run_query)(dict(parameters, **{best_param: [v] if engine.dialect.name =='mssql' else v}))
             for v in best_param_values
         )
 
-    return result
+    return list(chain.from_iterable(result))

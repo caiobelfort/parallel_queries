@@ -50,10 +50,9 @@ class Tests(unittest.TestCase):
         """
 
         parameters = {'param_1': 2}
-        conn = None
 
         with self.assertRaises(ValueError):
-            pqueries.execute_query_in_parallel(conn, stmt, parameters)
+            pqueries.execute_query_in_parallel(self.eng, stmt, parameters)
 
     def test_execute_query_in_parallel_run_without_hint(self):
 
