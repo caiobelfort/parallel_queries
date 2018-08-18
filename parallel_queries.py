@@ -41,6 +41,7 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
                               stmt: str,
                               parameters: dict,
                               n_jobs: int = 4,
+                              verbose = 0
                               ) -> list:
     """
     Executes a query in parallel, choosing the best splitter parameter
@@ -52,6 +53,7 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
     Returns:
         A list containing the rows retrived.
     """
+    parameters = parameters.copy()
 
     engine.dispose()  # Dispose all connections from engine first
 
@@ -90,10 +92,10 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
     best_param_values = parameters[best_param]
     del parameters[best_param]  # remove best param from the dict
 
-    with Parallel(n_jobs=n_jobs, backend='threading') as pwork:
+    with Parallel(n_jobs=n_jobs, backend='threading', verbose=verbose) as pwork:
         result = pwork(
             delayed(run_query)(dict(parameters, **{best_param: [v] if engine.dialect.name =='mssql' else v}))
             for v in best_param_values
         )
 
-    return list(chain.from_iterable(result))
+    return result
