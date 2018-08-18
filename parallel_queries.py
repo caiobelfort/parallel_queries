@@ -98,4 +98,5 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
             for v in best_param_values
         )
 
+    engine.dispose()
     return result
