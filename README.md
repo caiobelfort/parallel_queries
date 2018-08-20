@@ -42,4 +42,7 @@ result = execute_query_in_parallel(engine, stmt, {'param_1': val_param_1, 'param
 
 ```
 
-Note the remove of ':' in the keys of the dict parameters,
+*Note¹*: the remove of ':' in the keys of the dict parameters
+
+*Note²*: Tested with sqlite and pymssql 
+
