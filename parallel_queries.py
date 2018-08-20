@@ -41,8 +41,8 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
                               stmt: str,
                               parameters: dict,
                               n_jobs: int = 4,
-                              verbose = 0
-                              ) -> list:
+                              verbose=0
+                              ) -> typing.List[typing.List[sqlalchemy.engine.RowProxy]]:
     """
     Executes a query in parallel, choosing the best splitter parameter
     Args:
@@ -94,7 +94,7 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
 
     with Parallel(n_jobs=n_jobs, backend='threading', verbose=verbose) as pwork:
         result = pwork(
-            delayed(run_query)(dict(parameters, **{best_param: [v] if engine.dialect.name =='mssql' else v}))
+            delayed(run_query)(dict(parameters, **{best_param: [v] if engine.dialect.name == 'mssql' else v}))
             for v in best_param_values
         )
 
