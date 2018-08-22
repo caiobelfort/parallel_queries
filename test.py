@@ -3,6 +3,7 @@ import parallel_queries as pqueries
 import sqlalchemy as sa
 import os
 
+
 class Tests(unittest.TestCase):
     def setUp(self):
         self.eng = sa.create_engine('sqlite:///test.db')
@@ -11,7 +12,6 @@ class Tests(unittest.TestCase):
 
     def tearDown(self):
         os.remove('test.db')
-
 
     def test_correct_named_param_from_query(self):
         query = """
@@ -23,9 +23,9 @@ class Tests(unittest.TestCase):
         """
 
         computed_named_params = pqueries.get_named_params(query)
-        expected_named_params = ['param_id', 'param_value']
+        expected_named_params = [{'op': '=', 'param': 'param_id'}, {'op': '<', 'param': 'param_value'}]
 
-        self.assertEqual(set(computed_named_params), set(expected_named_params), 'Named params not equal expected.')
+        self.assertEqual(computed_named_params, expected_named_params, 'Named params not equal expected.')
 
     def test_empty_named_params_from_query(self):
         query = "SELECT TOP 10 * FROM table WHERE x = 2"
@@ -87,5 +87,3 @@ class Tests(unittest.TestCase):
 
         except:
             self.fail('Code failed')
-
-

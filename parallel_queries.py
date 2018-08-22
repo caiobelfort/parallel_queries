@@ -6,7 +6,7 @@ import sqlalchemy
 from joblib import Parallel, delayed
 
 
-def get_named_params(stmt: str) -> typing.List[str]:
+def get_named_params(stmt: str) -> typing.List[dict]:
     """
     Get named parameters from a sql statement.
     The named parameters are in the format (:param_x, :param_y) where the parameters are x and y.
@@ -14,14 +14,19 @@ def get_named_params(stmt: str) -> typing.List[str]:
     Args:
         stmt: The SQL statement with the named parameters
     Returns:
-        A list of named parameters
+        A list of dictionaries each with the operator and named of param
     """
 
     # Match the regex
-    matchs = re.findall(r'\s*:param_[a-zA-Z_0-9]*\s*', stmt)
+    regex = r"\s*(?P<op>in|IN|=|<|>|<=|>=)\s+:(?P<param>[a-zA-Z_0-9]*)\s*"
+
+    matches = re.findall(regex, stmt)
 
     # removes the ':' from start of each param name
-    return [s.replace(':', '').strip() for s in matchs]
+    group_list = []
+    for group in matches:
+        group_list.append({'op': group[0], 'param': group[1]})
+    return group_list
 
 
 def get_parallel_hinted_params(parameters: typing.List[str]) -> typing.List[str]:
