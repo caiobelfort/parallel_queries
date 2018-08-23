@@ -1,12 +1,8 @@
 import typing
 import re
-from itertools import chain
-
-import sqlalchemy
-from joblib import Parallel, delayed
 
 
-def get_named_params(stmt: str) -> typing.List[typing.Tuple[str, str]]:
+def get_named_params(stmt: str) -> dict:
     """
     Get named parameters from a sql statement.
     The named parameters are in the format (:param_x, :param_y) where the parameters are x and y.
@@ -14,7 +10,7 @@ def get_named_params(stmt: str) -> typing.List[typing.Tuple[str, str]]:
     Args:
         stmt: The SQL statement with the named parameters
     Returns:
-        A list of dictionaries each with the operator and named of param
+        A dictionary with operators by parameters
     """
 
     # Match the regex
@@ -23,10 +19,8 @@ def get_named_params(stmt: str) -> typing.List[typing.Tuple[str, str]]:
     matches = re.findall(regex, stmt)
 
     # removes the ':' from start of each param name
-    group_list = []
-    for group in matches:
-        group_list.append((group[0], group[1]))
-    return group_list
+    params = {g[1]: g[0] for g in matches}
+    return params
 
 
 def _check_missing_params(sql_params: typing.List[str],
@@ -46,66 +40,84 @@ def _check_missing_params(sql_params: typing.List[str],
     return len(missing_params), list(missing_params)
 
 
-def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
-                              stmt: str,
-                              parameters: dict,
-                              n_jobs: int = 4,
-                              verbose=0
-                              ) -> typing.List[typing.List[sqlalchemy.engine.RowProxy]]:
+def named_style_param_to_qmarks(stmt: str,
+                                params: dict
+                                ) -> typing.Tuple[str, typing.List[typing.Any]]:
     """
-    Executes a query in parallel, choosing the best splitter parameter
+    Returns a SQL statment with qmark parameters
+
     Args:
-        connectable: A connectable object from sqlalchemy.
-        stmt: The SQL statement, if the parallels hint are.
-        parameters: A dictionary of parameters defined in the SQL statement.
-        n_jobs: The number of workers to use.
+        stmt: A named style param SQL statement
+        params: A dict with
+
     Returns:
-        A list containing the rows retrived.
+        A tuple with converted SQL statement and a list of parameters in the correct order
     """
-    parameters = parameters.copy()
+    param_list = []
+    for p in params:
+        if params[p]['op'].lower() == 'in':
+            if not isinstance(params[p]['val'], list):
+                raise ValueError('Parameter %s must be a list' % p)
 
-    engine.dispose()  # Dispose all connections from engine first
+            # Creates a list of qmarks based on size of the list
+            qmarks = '(' + ','.join(['?'] * len(params[p]['val'])) + ')'
+            stmt = stmt.replace(':' + p, qmarks)
+            param_list.extend(params[p]['val'])
+        else:
+            stmt = stmt.replace(':' + p, '?')
+            param_list.append(params[p]['val'])
 
-    def run_query(param):
-        """Closure to run the query inside delayed"""
-        with engine.connect() as conn:
-            return conn.execute(sqlalchemy.text(stmt), param).fetchall()
+    return stmt, param_list
 
+
+def make_statement_partitions(stmt: str,
+                              parameters: dict,
+                              ) -> typing.List[typing.Tuple[str, typing.List[typing.Any]]]:
+    """
+    Creates a split in the statement based on best splitter parameter
+    Args:
+        stmt: The SQL statement
+        parameters: A dictionary of parameters defined in the SQL statement.
+    Returns:
+        A list containing a tuple of (statement, params)
+    """
     # Check if the *parameters* containing all values required by the query
     required_parameters = get_named_params(stmt)
-    n_missing, missing = _check_missing_params([g[1] for g in required_parameters], list(parameters.keys()))
+    if len(required_parameters) == 0:
+        return [(stmt, [])]
+
+    n_missing, missing = _check_missing_params(list(required_parameters.keys()), list(parameters.keys()))
     if n_missing:
         raise ValueError(
             'Missing %d parameter(s) value(s) required by the statament.\n' % (n_missing) +
             'Missing: (' + ', '.join(list(missing)) + ')'
         )
 
+    # Final form of parameters, maintain the order of the SQL statement
+    params = {g: {'op': required_parameters[g], 'val': parameters[g]} for g in required_parameters}
+
     # Check paramenters hinted by the 'PARALLEL' tag
-    parallel_parameters = []
+    parallel_parameters = [p for p in params if p.endswith('PARALLEL')]
 
     # If none parameter is parallel, execute the query as is.
     if len(parallel_parameters) == 0:
-        query = sqlalchemy.text(stmt)
-        with engine.connect() as conn:
-            return conn.execute(sqlalchemy.text(stmt), parameters).fetchall()
+        return [named_style_param_to_qmarks(stmt, params)]
+
 
     # Get values from parallel parameters keeping only list values
-    parallel_param_values = {k: parameters[k] for k in parallel_parameters if isinstance(parameters[k], list)}
+    parallel_param_values = {k: params[k]['val'] for k in parallel_parameters if isinstance(params[k]['val'], list)}
 
     # Choose the best for split the statement
     lengths = {k: len(parallel_param_values[k]) for k in parallel_param_values}
 
     # This choose the best param based on the list len
-    best_param = max(lengths.keys(), key=lambda key: lengths[key])
+    best_param_key = max(lengths.keys(), key=lambda key: lengths[key])
+    best_param = params[best_param_key]
+    del params[best_param_key]  # remove best param from the dict
 
-    best_param_values = parameters[best_param]
-    del parameters[best_param]  # remove best param from the dict
+    result = []
+    for val in best_param['val']:
+        parted_dict = dict(params, **{best_param_key: {'op': best_param['op'], 'val': [val]}})
+        result.append(named_style_param_to_qmarks(stmt, parted_dict))
 
-    with Parallel(n_jobs=n_jobs, backend='threading', verbose=verbose) as pwork:
-        result = pwork(
-            delayed(run_query)(dict(parameters, **{best_param: [v] if engine.dialect.name == 'mssql' else v}))
-            for v in best_param_values
-        )
-
-    engine.dispose()
     return result

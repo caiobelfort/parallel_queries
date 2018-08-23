@@ -5,13 +5,6 @@ import os
 
 
 class Tests(unittest.TestCase):
-    def setUp(self):
-        self.eng = sa.create_engine('sqlite:///test.db')
-        self.eng.execute('CREATE TABLE t (val1 INT, val2 INT)')
-        self.eng.execute('INSERT INTO t VALUES (1, 1), (2, 3), (5, 4), (8, 8)')
-
-    def tearDown(self):
-        os.remove('test.db')
 
     def test_correct_named_param_from_query(self):
         query = """
@@ -23,7 +16,7 @@ class Tests(unittest.TestCase):
         """
 
         computed_named_params = pqueries.get_named_params(query)
-        expected_named_params = [('=', 'param_id'), ('<', 'param_value')]
+        expected_named_params = {'param_id': '=', 'param_value': '<'}
 
         self.assertEqual(computed_named_params, expected_named_params, 'Named params not equal expected.')
 
@@ -33,12 +26,6 @@ class Tests(unittest.TestCase):
 
         self.assertEqual(len(computed_named_params), 0)
 
-    def test_parallel_hinted_params(self):
-        params = ['param_x_PARALLEL', 'param_y', 'param_z_PARALLEL']
-
-        parallel_params = pqueries.get_parallel_hinted_params(params)
-
-        self.assertEqual(set(parallel_params), {'param_x_PARALLEL', 'param_z_PARALLEL'})
 
     def test_check_required_params(self):
 
@@ -70,7 +57,7 @@ class Tests(unittest.TestCase):
         parameters = {'param_1': 2}
 
         with self.assertRaises(ValueError):
-            pqueries.execute_query_in_parallel(self.eng, stmt, parameters)
+            pqueries.make_statement_partitions(stmt, parameters)
 
     def test_execute_query_in_parallel_run_without_hint(self):
 
@@ -79,7 +66,7 @@ class Tests(unittest.TestCase):
         """
 
         try:
-            pqueries.execute_query_in_parallel(self.eng, stmt_1, {})
+            result_1 = pqueries.make_statement_partitions(stmt_1, {})
         except:
             self.fail('Code failed on stmt_1')
 
@@ -88,20 +75,30 @@ class Tests(unittest.TestCase):
         """
 
         try:
-            pqueries.execute_query_in_parallel(self.eng, stmt_2, {'param_1': 4})
+            result_2 = pqueries.make_statement_partitions(stmt_2, {'param_1': 4})
         except:
             self.fail('Code failed on stmt_2')
+
+        self.assertEqual(len(result_1), 1)
+        self.assertEqual(len(result_2), 1)
+
+        self.assertEqual(result_2[0][0], stmt_2.replace(':param_1', '?'))
+        self.assertEqual(set(result_2[0][1]), {4})
 
     def test_execute_query_in_parallel_run(self):
 
         stmt = """
         SELECT *
         FROM t 
-        WHERE val1 IN (:param_1_PARALLEL) AND val2 < :param_2
+        WHERE val1 IN :param_1_PARALLEL AND val2 < :param_2
         """
 
         try:
-            pqueries.execute_query_in_parallel(self.eng, stmt, {'param_1_PARALLEL': [1, 2, 5, 8], 'param_2': 8})
-
+            result = pqueries.make_statement_partitions(stmt, {'param_1_PARALLEL': [1, 2, 5, 8], 'param_2': 8})
         except:
             self.fail('Code failed')
+
+
+        self.assertEqual(len(result), 4)
+        self.assertEqual(result[0][0], stmt.replace(':param_1_PARALLEL', '(?)').replace(':param_2', '?'))
+        self.assertEqual(set(result[1][1]), {8, 2})
