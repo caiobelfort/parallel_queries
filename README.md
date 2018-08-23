@@ -1,9 +1,9 @@
-# Parallelization of SQL statements on client side
+# Partitioning of SQL statements.
 
 ## Introduction
 
-This project is a attempt to create a simple idiom to make explict parallelization of 
-SQL statements on client side. 
+This project is a attempt to create a simple idiom to make explict partitioning of 
+SQL statements
 
 The project is intended only to retrieve data from the database.
 
@@ -30,7 +30,7 @@ is intented to execute in parallel with a list of values
 
 The python code:
 ```python
-from parallel_queries import execute_query_in_parallel
+from parallel_queries import make_statement_partitions
 
 stmt = """
 SELECT *
@@ -38,11 +38,10 @@ FROM table
 WHERE val_1 = :param_1 and val_2 = :param_2_PARALLEL
 """
 
-result = execute_query_in_parallel(engine, stmt, {'param_1': val_param_1, 'param_2_PARALLEL': list_param_2}, n_jobs=4)
+result = make_statement_partitions(stmt, {'param_1': val_param_1, 'param_2_PARALLEL': list_param_2}, n_jobs=4)
 
 ```
 
 *Note¹*: the remove of ':' in the keys of the dict parameters
 
-*Note²*: Tested with sqlite and pymssql 
 
