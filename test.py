@@ -23,7 +23,7 @@ class Tests(unittest.TestCase):
         """
 
         computed_named_params = pqueries.get_named_params(query)
-        expected_named_params = [{'op': '=', 'param': 'param_id'}, {'op': '<', 'param': 'param_value'}]
+        expected_named_params = [('=', 'param_id'), ('<', 'param_value')]
 
         self.assertEqual(computed_named_params, expected_named_params, 'Named params not equal expected.')
 
@@ -39,6 +39,24 @@ class Tests(unittest.TestCase):
         parallel_params = pqueries.get_parallel_hinted_params(params)
 
         self.assertEqual(set(parallel_params), {'param_x_PARALLEL', 'param_z_PARALLEL'})
+
+    def test_check_required_params(self):
+
+        required_params = ['x', 'y']
+        user_params = ['y']
+
+        n_missing, missing = pqueries._check_missing_params(required_params, user_params)
+
+        self.assertEqual(n_missing, 1, 'Number of missing params are wrong')
+        self.assertEqual(set(missing), {'x'}, 'Missing params are wrong')
+
+
+        required_params = ['y']
+        n_missing, _ = pqueries._check_missing_params(required_params, user_params)
+        self.assertEqual(n_missing, 0, 'Number of missing params are wrong')
+
+
+
 
     def test_execute_query_in_parallel_raises_parameter_missing(self):
         """Tests if all parameters are defined for the query"""

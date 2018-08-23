@@ -6,7 +6,7 @@ import sqlalchemy
 from joblib import Parallel, delayed
 
 
-def get_named_params(stmt: str) -> typing.List[dict]:
+def get_named_params(stmt: str) -> typing.List[typing.Tuple[str, str]]:
     """
     Get named parameters from a sql statement.
     The named parameters are in the format (:param_x, :param_y) where the parameters are x and y.
@@ -25,21 +25,25 @@ def get_named_params(stmt: str) -> typing.List[dict]:
     # removes the ':' from start of each param name
     group_list = []
     for group in matches:
-        group_list.append({'op': group[0], 'param': group[1]})
+        group_list.append((group[0], group[1]))
     return group_list
 
 
-def get_parallel_hinted_params(parameters: typing.List[str]) -> typing.List[str]:
+def _check_missing_params(sql_params: typing.List[str],
+                          user_params: typing.List[str]) -> typing.Tuple[int, typing.List[str]]:
     """
-    Returns a list of parallel hinted named params
+    Check if all required parameters of a SQL script are passed by the user
+
     Args:
-        stmt: The sql statement
+        sql_params: A list of required params
+        user_params: A list of params passed by the user
 
     Returns:
-        A list of parallel hinted params
+        The number of missing params and the list with the names
     """
 
-    return [p for p in parameters if p.endswith('_PARALLEL')]
+    missing_params = set(sql_params) - set(user_params)
+    return len(missing_params), list(missing_params)
 
 
 def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
@@ -69,15 +73,15 @@ def execute_query_in_parallel(engine: sqlalchemy.engine.Engine,
 
     # Check if the *parameters* containing all values required by the query
     required_parameters = get_named_params(stmt)
-    if set(required_parameters) != set(parameters.keys()):
-        missing = set(required_parameters) - set(parameters.keys())
+    n_missing, missing = _check_missing_params([g[1] for g in required_parameters], list(parameters.keys()))
+    if n_missing:
         raise ValueError(
-            'Missing parameter values required by the statament. ' +
+            'Missing %d parameter(s) value(s) required by the statament.\n' % (n_missing) +
             'Missing: (' + ', '.join(list(missing)) + ')'
         )
 
     # Check paramenters hinted by the 'PARALLEL' tag
-    parallel_parameters = get_parallel_hinted_params(required_parameters)
+    parallel_parameters = []
 
     # If none parameter is parallel, execute the query as is.
     if len(parallel_parameters) == 0:
